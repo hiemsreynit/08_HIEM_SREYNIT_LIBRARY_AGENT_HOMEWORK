@@ -82,6 +82,17 @@ def execute_tool(
             "error": f"Role '{role}' is not allowed to use '{tool_name}'.",
         }
 
+    if tool_name == "delete_book":
+        confirmation = input(
+            "This action will delete a book. Continue? (yes/no): "
+        ).strip().lower()
+
+        if confirmation != "yes":
+            return {
+                "success": False,
+                "error": "Deletion cancelled by human.",
+            }
+
     tool = TOOL_REGISTRY[tool_name]
 
     try:
