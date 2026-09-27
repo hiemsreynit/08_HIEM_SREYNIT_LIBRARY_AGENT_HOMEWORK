@@ -32,6 +32,13 @@ PERMISSIONS = {
     },
 }
 
+TOOL_RISK = {
+    "search_book": "green",
+    "check_availability": "green",
+    "borrow_book": "yellow",
+    "delete_book": "red",
+}
+
 TOOL_REGISTRY = {
     "search_book": {
         "schema": SearchBookInput,
@@ -82,15 +89,15 @@ def execute_tool(
             "error": f"Role '{role}' is not allowed to use '{tool_name}'.",
         }
 
-    if tool_name == "delete_book":
+    if TOOL_RISK[tool_name] == "red":
         confirmation = input(
-            "This action will delete a book. Continue? (yes/no): "
+            "This is a high-risk action. Continue? (yes/no): "
         ).strip().lower()
 
         if confirmation != "yes":
             return {
                 "success": False,
-                "error": "Deletion cancelled by human.",
+                "error": "Action cancelled by human.",
             }
 
     tool = TOOL_REGISTRY[tool_name]

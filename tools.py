@@ -5,8 +5,6 @@ from schemas import (
     DeleteBookInput,
 )
 
-
-# Simple in-memory library data
 books = [
     {
         "id": 1,
@@ -84,6 +82,7 @@ def borrow_book(input_data: BorrowBookInput):
             if not book["available"]:
                 return {
                     "success": False,
+                    "error_code": "BOOK_UNAVAILABLE",
                     "message": f"'{book['title']}' is currently unavailable.",
                 }
 
