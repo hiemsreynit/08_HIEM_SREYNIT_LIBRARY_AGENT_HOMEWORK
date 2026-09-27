@@ -1,56 +1,12 @@
 # Library Agent
 
-## Requirements
+A small agentic application that helps users interact with a library using an LLM and tools.
 
-- Python 3.10+
-- Ollama
-- Qwen 2.5 0.5B Instruct model
+The agent receives a user's request, decides which tool to use, executes the tool through a safety layer, observes the result, and continues until it can provide a final answer.
 
-## 1. Project Overview
+## Project Overview
 
-Library Agent is a small agentic application that helps users interact with a library.
-
-The agent receives a user's request, decides which tool to use, executes the tool through the application, observes the result, and continues until it can provide a final answer.
-
-The project uses a local LLM through Ollama and includes permission control and basic safety checks.
-
-### Main Features
-
-- Search for books
-- Check book availability
-- Borrow available books
-- Delete books with admin permission
-- Validate tool inputs
-- Control tool permissions by user role
-- Limit the maximum number of tool calls
-- Handle tool errors safely
-
----
-
-## 2. Available Tools
-
-| Tool | Description | Permission |
-|---|---|---|
-| `search_book` | Searches for books by title or keyword. | Student, Admin |
-| `check_availability` | Checks whether a specific book is available. | Student, Admin |
-| `borrow_book` | Borrows a book if it is available. | Student, Admin |
-| `delete_book` | Deletes a book from the library. | Admin only |
-
-Each tool has a defined input schema using Pydantic.
-
-For example, `check_availability` requires:
-
-```text
-book_id: integer
-```
-
-The application validates the arguments before executing the tool.
-
----
-
-## 3. Agent Loop
-
-The application follows a simple agent loop:
+This project demonstrates a basic **Agentic AI workflow**:
 
 ```text
 User Request
@@ -59,237 +15,311 @@ Agent / LLM
      ↓
 Tool Call
      ↓
-Application / Harness
-     ↓
-Permission + Validation
+Safety & Control Layer
      ↓
 Tool Execution
      ↓
 Tool Result
      ↓
-Agent / LLM
-     ↓
-Decide Again
+Agent decides again
      ↺
 Final Answer
 ```
 
-The agent can use the result of one tool to decide whether another tool is needed.
+The project uses a local Ollama model and does not use LangChain or LangGraph.
 
-### Example
+## Tools
 
-User:
+The Library Agent has four tools:
 
-```text
-Find me a Python book that is currently available.
-```
+| Tool | Description | Risk |
+|---|---|---|
+| `search_book` | Search for books by title or keyword | Green |
+| `check_availability` | Check whether a book is available | Green |
+| `borrow_book` | Borrow an available book | Yellow |
+| `delete_book` | Delete a book from the library | Red |
 
-The agent can request:
-
-```text
-check_availability(book_id=1)
-```
-
-The tool returns:
-
-```text
-{
-    "success": true,
-    "book_id": 1,
-    "title": "Python Crash Course",
-    "available": true
-}
-```
-
-The agent then uses this result to generate the final response.
-
----
-
-## 4. Permission Rule
+## Permission Rules
 
 The application controls which tools each role can use.
 
-### Student
+| Role | Allowed Tools |
+|---|---|
+| Student | `search_book`, `check_availability`, `borrow_book` |
+| Admin | All four tools |
 
-A student can:
+For example, a student cannot use `delete_book`.
 
-```text
-search_book
-check_availability
-borrow_book
-```
+The permission check is performed by the application, not by the LLM.
 
-A student cannot:
+## Safety Features
 
-```text
-delete_book
-```
+### 1. Input Validation
 
-### Admin
-
-An admin can use all available tools:
-
-```text
-search_book
-check_availability
-borrow_book
-delete_book
-```
-
-The permission check is performed by the application before the tool is executed.
+Tool arguments are validated using Pydantic schemas before a tool is executed.
 
 For example:
 
 ```text
-Student → delete_book
+book_id must be an integer greater than 0
+book_name cannot be empty
+```
+
+Invalid arguments are rejected by the application.
+
+### 2. Allowlist
+
+Only tools registered in `TOOL_REGISTRY` are allowed to execute.
+
+If the agent requests an unknown tool, the application rejects it.
+
+```text
+Agent requests tool
        ↓
-Permission Check
-       ↓
-DENIED
+Is tool registered?
+   ┌───┴───┐
+  Yes      No
+   ↓        ↓
+Execute   Reject
 ```
 
-The LLM can request a tool, but it cannot bypass the application's permission rules.
+### 3. Risk Classification
 
----
+Each tool is assigned a risk level:
 
-## 5. Safety
+```text
+Green  → Low risk
+Yellow → More sensitive
+Red    → High risk
+```
 
-The project includes several basic safety mechanisms.
+The application uses these levels to apply different execution policies.
 
-### Input Validation
+For this project:
 
-Tool arguments are validated using Pydantic schemas.
+- Green tools can execute normally.
+- Yellow tools are treated as more sensitive operations.
+- Red tools require human approval.
+
+### 4. Human-in-the-Loop (HITL)
+
+High-risk actions require human approval before execution.
 
 For example:
 
 ```text
-book_id > 0
+Agent requests delete_book
+          ↓
+Permission check
+          ↓
+Risk = Red
+          ↓
+Human approval required
+          ↓
+Continue? (yes/no)
+          ↓
+       Execute
 ```
 
-If an invalid value is provided, the tool is not executed.
+If the user rejects the action, the tool is not executed.
 
-Example:
+### 5. Maximum Tool-Call Limit
 
-```text
-book_id = -1
-```
-
-Result:
-
-```text
-Invalid tool arguments.
-```
-
-### Permission Control
-
-The application checks the user's role before executing a tool.
-
-For example:
-
-```text
-Student → delete_book → DENIED
-Admin   → delete_book → ALLOWED
-```
-
-### Controlled Errors
-
-The application does not expose raw exceptions to the user.
-
-Instead, it returns controlled error messages such as:
-
-```text
-Unknown tool
-Invalid tool arguments
-Role is not allowed to use this tool
-The tool failed while processing the request
-```
-
-### Tool-Call Limit
-
-The agent has a maximum tool-call limit:
+The agent has a maximum number of tool calls:
 
 ```text
 MAX_TOOL_CALLS = 5
 ```
 
-This prevents the agent from continuing to call tools indefinitely.
+This prevents the agent from continuing tool calls indefinitely.
 
-If the limit is reached, the agent stops and returns:
+### 6. Controlled Failure Handling
 
-```text
-The agent stopped because the maximum tool-call limit was reached.
-```
+The application catches validation errors, permission errors, unknown tools, and tool execution failures.
 
----
+Instead of allowing the application to crash, the harness returns a controlled error.
 
-## 6. Example Run
+## Agent Loop
 
-### Input
-
-Role (student/admin): student
-
-What do you need?
-Find me a Python book that is currently available.
-
-### Agent Execution
-
-[Agent requested tool: check_availability]
-[Arguments: {'book_id': 1}]
-
-[Tool result: {
-    'success': True,
-    'book_id': 1,
-    'title': 'Python Crash Course',
-    'available': True
-}]
-
-### Final Answer
-
-I found a Python book that is currently available.
-The title of the book is "Python Crash Course".
-
-### Permission Example
-
-If a student attempts to delete a book:
+The agent follows an iterative loop:
 
 ```text
-Tool: delete_book
-Role: student
+User Request
+     ↓
+LLM decides what to do
+     ↓
+Tool call requested
+     ↓
+Harness validates and checks permissions
+     ↓
+Risk policy is applied
+     ↓
+Tool executes
+     ↓
+Result returned to LLM
+     ↓
+LLM decides whether another action is needed
+     ↓
+Final Answer
 ```
 
-The application returns:
+For example:
 
 ```text
-{
-    'success': False,
-    'error': "Role 'student' is not allowed to use 'delete_book'."
-}
+User:
+"Find me a Python book that is currently available."
+
+       ↓
+
+search_book("Python")
+       ↓
+
+Python Crash Course → ID: 1
+       ↓
+
+check_availability(book_id=1)
+       ↓
+
+Available
+       ↓
+
+Final Answer
 ```
-
-This demonstrates that the application, rather than the LLM, controls whether a requested action is allowed.
-
----
 
 ## Project Structure
 
 ```text
 my_agent/
-│
 ├── agent.py
 ├── harness.py
 ├── schemas.py
 ├── tools.py
 ├── main.py
 ├── test_agent.py
-└── README.md
+├── requirements.txt
+├── README.md
+└── .gitignore
 ```
 
 ### File Responsibilities
 
-- `main.py` — Starts the application and receives user input.
-- `agent.py` — Contains the LLM, tool definitions, and agent loop.
-- `tools.py` — Contains the actual library tool implementations.
-- `schemas.py` — Defines and validates tool input schemas.
-- `harness.py` — Handles permissions, validation, errors, and tool-call limits.
-- `test_agent.py` — Used to test the agent and safety mechanisms.
-- `README.md` — Project documentation.
+| File | Purpose |
+|---|---|
+| `main.py` | Application entry point |
+| `agent.py` | LLM interaction and agent loop |
+| `harness.py` | Tool validation, permissions, risk control, HITL, and execution limits |
+| `tools.py` | Library tool implementations |
+| `schemas.py` | Pydantic input schemas |
+| `test_agent.py` | Tests and demonstrations of safety features |
+| `requirements.txt` | Python dependencies |
+
+## Requirements
+
+- Python 3.14
+- Ollama
+- `qwen2.5:0.5b-instruct`
+- Pydantic
+- ollama
+- python-dotenv
+
+## Installation
+
+Create and activate a virtual environment:
+
+```bash
+python -m venv venv
+```
+
+On Git Bash:
+
+```bash
+source venv/Scripts/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Make sure Ollama is running and the model is available:
+
+```bash
+ollama pull qwen2.5:0.5b-instruct
+```
+
+## Run the Application
+
+Start the Library Agent:
+
+```bash
+python main.py
+```
+
+Example:
+
+```text
+Role (student/admin): student
+What do you need? Find me a Python book that is currently available.
+```
+
+The agent will decide which tools to use and return a final answer.
+
+## Test Safety Features
+
+`test_agent.py` can be used to test individual safety mechanisms without depending on the LLM to choose a particular tool.
+
+For example, it can demonstrate:
+
+- Permission control
+- Risk Classification
+- Human-in-the-Loop
+- Input validation
+- Tool-call limits
+- Controlled errors
+
+Run:
+
+```bash
+python test_agent.py
+```
+
+## Example HITL Test
+
+When an admin attempts to delete a book:
+
+```text
+This is a high-risk action. Continue? (yes/no):
+```
+
+If the human enters:
+
+```text
+no
+```
+
+the action is cancelled.
+
+If the human enters:
+
+```text
+yes
+```
+
+the tool is allowed to execute.
+
+## Purpose of the Project
+
+The main purpose of this project is to demonstrate how an agentic application can combine:
+
+- LLM reasoning
+- Tool calling
+- Tool schemas
+- Application-level permissions
+- Risk classification
+- Human approval
+- Input validation
+- Failure handling
+- Execution limits
+
+The LLM can propose an action, but the **application controls whether that action is allowed to execute**.
