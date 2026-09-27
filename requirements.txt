@@ -1,0 +1,3 @@
+pydantic
+ollama
+python-dotenv
